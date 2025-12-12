@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <style>
         /* Убедимся, что приложение занимает всю высоту экрана на мобильных устройствах */
         #root {
@@ -25,10 +26,41 @@
 <body>
     <div id="root"></div>
 
+    <!-- Тип text/babel указывает, что этот код должен быть скомпилирован Babel -->
     <script type="text/babel">
-    import React, { useState, useEffect } from 'react';
-    // Иконки Lucide React доступны в глобальной области видимости Babel
-    const { Save, Trash2, FileText, Activity, Download, Plus, X, AlertTriangle, CheckCircle } = lucide;
+    
+    // Получаем хуки React
+    const { useState, useEffect } = React;
+    
+    // ===============================================
+    // Встроенные SVG-иконки (заменяют LucideReact)
+    // Это устраняет ошибки зависимостей UMD-сборок.
+    // ===============================================
+    const Icon = ({ path, className = "h-6 w-6" }) => (
+        <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+            className={className}
+        >
+            <path d={path} />
+        </svg>
+    );
+
+    const Save = (props) => <Icon {...props} path="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8" />;
+    const Trash2 = (props) => <Icon {...props} path="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />;
+    const FileText = (props) => <Icon {...props} path="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zM14 2v4a2 2 0 0 0 2 2h4M10 9h6M10 13h6M10 17h6" />;
+    const Activity = (props) => <Icon {...props} path="M22 12h-4l-3 9L9 3l-3 9H2" />;
+    const Download = (props) => <Icon {...props} path="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />;
+    const Plus = (props) => <Icon {...props} path="M12 5v14M5 12h14" />;
+    const X = (props) => <Icon {...props} path="M18 6L6 18M6 6l12 12" />;
+    const AlertTriangle = (props) => <Icon {...props} path="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01" />;
+    const CheckCircle = (props) => <Icon {...props} path="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3" />;
+
 
     // ===============================================
     // Компонент: Модальное окно подтверждения удаления
@@ -108,7 +140,10 @@
       useEffect(() => {
         const savedReadings = localStorage.getItem('bp_diary_data');
         if (savedReadings) {
-          setReadings(JSON.parse(savedReadings));
+          // Сортировка данных при загрузке, чтобы новейшие были сверху
+          const parsedReadings = JSON.parse(savedReadings);
+          parsedReadings.sort((a, b) => b.timestamp - a.timestamp);
+          setReadings(parsedReadings);
         }
       }, []);
 
@@ -124,14 +159,20 @@
 
       const handleSubmit = (e) => {
         e.preventDefault();
-        if (!formData.sys || !formData.dia) return;
+        // Проверка на обязательные поля
+        if (!formData.sys || !formData.dia || isNaN(parseInt(formData.sys)) || isNaN(parseInt(formData.dia))) {
+            setAppAlert({ message: 'Пожалуйста, введите корректные значения систолического и диастолического давления.', type: 'warning' });
+            return;
+        }
 
         const newReading = {
-          id: Date.now(),
+          id: Date.now(), // Уникальный ID на основе времени
           ...formData,
+          // Создаем временную метку для сортировки и экспорта
           timestamp: new Date(`${formData.date}T${formData.time}`).getTime()
         };
 
+        // Добавляем новую запись в начало массива
         setReadings(prev => [newReading, ...prev]);
         setShowForm(false);
         setAppAlert({ message: 'Запись успешно добавлена.', type: 'success' });
@@ -173,11 +214,12 @@
         // Заголовки для CSV/TXT
         let content = "Дата;Время;Систолическое;Диастолическое;Пульс;Заметки\n";
 
+        // Форматирование данных для экспорта
         readings.forEach(item => {
-          content += `${item.date};${item.time};${item.sys};${item.dia};${item.pulse || '-'};${item.notes || '-'}\n`;
+          content += `${item.date};${item.time};${item.sys};${item.dia};${item.pulse || '-'};"${(item.notes || '').replace(/"/g, '""')}"\n`;
         });
 
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -188,15 +230,21 @@
         setAppAlert({ message: 'Экспорт данных завершен.', type: 'success' });
       };
 
-      // Определение цвета категории давления
+      // Определение цвета категории давления (на основе стандартных рекомендаций)
       const getStatusColor = (sys, dia) => {
         const s = parseInt(sys);
         const d = parseInt(dia);
+
+        if (s < 90 && d < 60) return 'border-l-4 border-purple-500'; // Гипотония
         if (s < 120 && d < 80) return 'border-l-4 border-green-500'; // Норма
-        if ((s >= 120 && s <= 129) && d < 80) return 'border-l-4 border-yellow-400'; // Повышенное
+        if ((s >= 120 && s <= 129) && d < 80) return 'border-l-4 border-yellow-400'; // Повышенное (Prehypertension)
         if ((s >= 130 && s <= 139) || (d >= 80 && d <= 89)) return 'border-l-4 border-orange-500'; // Гипертония 1
         if (s >= 140 || d >= 90) return 'border-l-4 border-red-600'; // Гипертония 2
-        return 'border-l-4 border-gray-300';
+        
+        // Кризис (не является официальной категорией, но для визуального выделения)
+        if (s >= 180 || d >= 120) return 'border-l-4 border-red-900'; 
+        
+        return 'border-l-4 border-gray-300'; // Неопределено
       };
 
       return (
@@ -223,7 +271,7 @@
             
             {/* Статистика (краткая) */}
             {readings.length > 0 && (
-              <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex justify-between items-center">
+              <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex justify-between items-center border border-slate-100">
                 <div>
                   <p className="text-xs text-slate-500 uppercase tracking-wide">Всего записей</p>
                   <p className="text-2xl font-bold text-blue-600">{readings.length}</p>
@@ -248,7 +296,7 @@
                 readings.map((item) => (
                   <div 
                     key={item.id} 
-                    className={`bg-white p-4 rounded-xl shadow-sm relative group ${getStatusColor(item.sys, item.dia)}`}
+                    className={`bg-white p-4 rounded-xl shadow-md relative group ${getStatusColor(item.sys, item.dia)} border border-slate-100`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -263,22 +311,23 @@
                         </div>
                       </div>
                       {item.pulse && (
-                        <div className="text-right bg-blue-50 px-2 py-1 rounded-lg">
-                          <span className="text-xs text-blue-400 block">Пульс</span>
-                          <span className="text-lg font-semibold text-blue-600">{item.pulse}</span>
+                        <div className="text-right bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                          <span className="text-xs text-blue-400 block uppercase font-medium">Пульс</span>
+                          <span className="text-xl font-bold text-blue-600">{item.pulse}</span>
                         </div>
                       )}
                     </div>
                     
                     {item.notes && (
-                      <p className="text-sm text-slate-500 mt-2 border-t pt-2 border-slate-100 italic">
+                      <p className="text-sm text-slate-500 mt-3 border-t pt-3 border-slate-100 italic">
                         {item.notes}
                       </p>
                     )}
 
                     <button 
                       onClick={() => initiateDelete(item.id)}
-                      className="absolute top-4 right-4 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded"
+                      className="absolute top-4 right-4 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-red-50 rounded-full"
+                      title="Удалить запись"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -291,7 +340,8 @@
           {/* Кнопка добавления (FAB) */}
           <button
             onClick={() => setShowForm(true)}
-            className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-transform hover:scale-105 active:scale-95 z-20"
+            className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-transform hover:scale-105 active:scale-95 z-20"
+            title="Добавить новую запись"
           >
             <Plus className="h-8 w-8" />
           </button>
@@ -421,9 +471,5 @@
     // Рендеринг приложения
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
-
-    <!-- Загрузка иконок Lucide React в глобальную область видимости -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
 </body>
 </html>
