@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дневник Артериального Давления</title>
+    <!-- Tailwind CSS CDN для стилей -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Загрузка библиотек React и Babel для запуска JSX -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Убедимся, что приложение занимает всю высоту экрана на мобильных устройствах */
+        #root {
+            min-height: 100vh;
+        }
+        /* Анимации для модальных окон (для Tailwind) */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideInFromBottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-in.fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        .animate-in.slide-in-from-bottom-10 { animation: slideInFromBottom 0.3s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+    import React, { useState, useEffect } from 'react';
+    // Иконки Lucide React доступны в глобальной области видимости Babel
+    const { Save, Trash2, FileText, Activity, Download, Plus, X, AlertTriangle, CheckCircle } = lucide;
+
+    // ===============================================
+    // Компонент: Модальное окно подтверждения удаления
+    // ===============================================
+    const ConfirmationModal = ({ message, onConfirm, onCancel }) => (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertTriangle className="h-6 w-6 text-red-500" />
+            <h3 className="text-lg font-bold">Подтверждение</h3>
+          </div>
+          <p className="text-slate-600 mb-6">{message}</p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-sm font-semibold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Удалить
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+
+    // ===============================================
+    // Компонент: Модальное окно уведомления
+    // ===============================================
+    const AlertModal = ({ message, type, onClose }) => {
+        const icon = type === 'success' ? <CheckCircle className="h-6 w-6 text-green-500" /> : <AlertTriangle className="h-6 w-6 text-yellow-500" />;
+        const title = type === 'success' ? 'Успех' : 'Внимание';
+
+        return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+                    <div className="flex items-center gap-3 mb-4">
+                        {icon}
+                        <h3 className="text-lg font-bold">{title}</h3>
+                    </div>
+                    <p className="text-slate-600 mb-6">{message}</p>
+                    <div className="flex justify-end">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            OK
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+
+    function App() {
+      const [readings, setReadings] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [readingToDelete, setReadingToDelete] = useState(null); // ID записи для удаления
+      const [alert, setAppAlert] = useState(null); // { message: string, type: 'warning' | 'success' }
+      
+      // Начальное состояние формы
+      const [formData, setFormData] = useState({
+        sys: '',
+        dia: '',
+        pulse: '',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toTimeString().split(' ')[0].slice(0, 5),
+        notes: ''
+      });
+
+      // Загрузка данных из LocalStorage при запуске
+      useEffect(() => {
+        const savedReadings = localStorage.getItem('bp_diary_data');
+        if (savedReadings) {
+          setReadings(JSON.parse(savedReadings));
+        }
+      }, []);
+
+      // Сохранение данных в LocalStorage при изменении
+      useEffect(() => {
+        localStorage.setItem('bp_diary_data', JSON.stringify(readings));
+      }, [readings]);
+
+      const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!formData.sys || !formData.dia) return;
+
+        const newReading = {
+          id: Date.now(),
+          ...formData,
+          timestamp: new Date(`${formData.date}T${formData.time}`).getTime()
+        };
+
+        setReadings(prev => [newReading, ...prev]);
+        setShowForm(false);
+        setAppAlert({ message: 'Запись успешно добавлена.', type: 'success' });
+        // Сброс значений давления, но оставляем дату/время актуальными
+        setFormData(prev => ({
+          ...prev,
+          sys: '',
+          dia: '',
+          pulse: '',
+          time: new Date().toTimeString().split(' ')[0].slice(0, 5)
+        }));
+      };
+
+      // Инициирует показ модального окна подтверждения
+      const initiateDelete = (id) => {
+        setReadingToDelete(id);
+      };
+
+      // Выполняет удаление
+      const confirmDelete = () => {
+        if (readingToDelete) {
+            setReadings(prev => prev.filter(item => item.id !== readingToDelete));
+            setReadingToDelete(null); // Скрыть модальное окно
+            setAppAlert({ message: 'Запись удалена.', type: 'success' });
+        }
+      };
+
+      // Отменяет удаление
+      const cancelDelete = () => {
+        setReadingToDelete(null); // Скрыть модальное окно
+      };
+
+      const handleExport = () => {
+        if (readings.length === 0) {
+          setAppAlert({ message: 'Нет данных для экспорта.', type: 'warning' });
+          return;
+        }
+
+        // Заголовки для CSV/TXT
+        let content = "Дата;Время;Систолическое;Диастолическое;Пульс;Заметки\n";
+
+        readings.forEach(item => {
+          content += `${item.date};${item.time};${item.sys};${item.dia};${item.pulse || '-'};${item.notes || '-'}\n`;
+        });
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `bp_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setAppAlert({ message: 'Экспорт данных завершен.', type: 'success' });
+      };
+
+      // Определение цвета категории давления
+      const getStatusColor = (sys, dia) => {
+        const s = parseInt(sys);
+        const d = parseInt(dia);
+        if (s < 120 && d < 80) return 'border-l-4 border-green-500'; // Норма
+        if ((s >= 120 && s <= 129) && d < 80) return 'border-l-4 border-yellow-400'; // Повышенное
+        if ((s >= 130 && s <= 139) || (d >= 80 && d <= 89)) return 'border-l-4 border-orange-500'; // Гипертония 1
+        if (s >= 140 || d >= 90) return 'border-l-4 border-red-600'; // Гипертония 2
+        return 'border-l-4 border-gray-300';
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 relative overflow-hidden">
+          
+          {/* Шапка */}
+          <header className="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
+            <div className="flex justify-between items-center max-w-md mx-auto">
+              <div className="flex items-center gap-2">
+                <Activity className="h-6 w-6" />
+                <h1 className="text-xl font-bold">Дневник АД</h1>
+              </div>
+              <button 
+                onClick={handleExport}
+                className="p-2 bg-blue-500 hover:bg-blue-700 rounded-full transition-colors"
+                title="Экспорт в Excel/Txt"
+              >
+                <Download className="h-5 w-5" />
+              </button>
+            </div>
+          </header>
+
+          <main className="max-w-md mx-auto p-4">
+            
+            {/* Статистика (краткая) */}
+            {readings.length > 0 && (
+              <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Всего записей</p>
+                  <p className="text-2xl font-bold text-blue-600">{readings.length}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Последнее</p>
+                  <p className="text-lg font-semibold">
+                    {readings[0].sys}/{readings[0].dia}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Список записей */}
+            <div className="space-y-3">
+              {readings.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>Нет записей. Нажмите "+" чтобы добавить.</p>
+                </div>
+              ) : (
+                readings.map((item) => (
+                  <div 
+                    key={item.id} 
+                    className={`bg-white p-4 rounded-xl shadow-sm relative group ${getStatusColor(item.sys, item.dia)}`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="text-xs text-slate-400 font-medium">
+                          {new Date(item.date).toLocaleDateString('ru-RU')} в {item.time}
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-3xl font-bold text-slate-700">{item.sys}</span>
+                          <span className="text-xl text-slate-400">/</span>
+                          <span className="text-3xl font-bold text-slate-700">{item.dia}</span>
+                          <span className="text-sm text-slate-500 ml-2">мм рт.ст.</span>
+                        </div>
+                      </div>
+                      {item.pulse && (
+                        <div className="text-right bg-blue-50 px-2 py-1 rounded-lg">
+                          <span className="text-xs text-blue-400 block">Пульс</span>
+                          <span className="text-lg font-semibold text-blue-600">{item.pulse}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {item.notes && (
+                      <p className="text-sm text-slate-500 mt-2 border-t pt-2 border-slate-100 italic">
+                        {item.notes}
+                      </p>
+                    )}
+
+                    <button 
+                      onClick={() => initiateDelete(item.id)}
+                      className="absolute top-4 right-4 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </main>
+
+          {/* Кнопка добавления (FAB) */}
+          <button
+            onClick={() => setShowForm(true)}
+            className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-transform hover:scale-105 active:scale-95 z-20"
+          >
+            <Plus className="h-8 w-8" />
+          </button>
+
+          {/* Модальное окно формы */}
+          {showForm && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-slate-800">Новая запись</h2>
+                  <button 
+                    onClick={() => setShowForm(false)}
+                    className="p-2 hover:bg-slate-100 rounded-full text-slate-500"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Верхнее (SYS)</label>
+                      <input
+                        type="number"
+                        name="sys"
+                        value={formData.sys}
+                        onChange={handleInputChange}
+                        placeholder="120"
+                        className="w-full text-2xl font-bold p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-center bg-slate-50"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Нижнее (DIA)</label>
+                      <input
+                        type="number"
+                        name="dia"
+                        value={formData.dia}
+                        onChange={handleInputChange}
+                        placeholder="80"
+                        className="w-full text-2xl font-bold p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-center bg-slate-50"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Пульс (опционально)</label>
+                    <input
+                      type="number"
+                      name="pulse"
+                      value={formData.pulse}
+                      onChange={handleInputChange}
+                      placeholder="60"
+                      className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Дата</label>
+                      <input
+                        type="date"
+                        name="date"
+                        value={formData.date}
+                        onChange={handleInputChange}
+                        className="w-full p-2 border rounded-lg text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Время</label>
+                      <input
+                        type="time"
+                        name="time"
+                        value={formData.time}
+                        onChange={handleInputChange}
+                        className="w-full p-2 border rounded-lg text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Заметка</label>
+                    <textarea
+                      name="notes"
+                      value={formData.notes}
+                      onChange={handleInputChange}
+                      placeholder="Как самочувствие?"
+                      rows="2"
+                      className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-slate-50 resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors flex justify-center items-center gap-2 mt-4"
+                  >
+                    <Save className="h-5 w-5" />
+                    Сохранить
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Отображение модальных окон (вместо alert/confirm) */}
+          {readingToDelete && (
+            <ConfirmationModal
+              message="Вы уверены, что хотите безвозвратно удалить эту запись?"
+              onConfirm={confirmDelete}
+              onCancel={cancelDelete}
+            />
+          )}
+
+          {alert && (
+            <AlertModal
+              message={alert.message}
+              type={alert.type}
+              onClose={() => setAppAlert(null)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // Рендеринг приложения
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+
+    <!-- Загрузка иконок Lucide React в глобальную область видимости -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
+</body>
+</html>
